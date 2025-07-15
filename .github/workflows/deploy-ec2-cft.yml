@@ -1,0 +1,57 @@
+name: Deploy EC2 via CloudFormation
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: "us-east-2"  # or reference secret: ${{ secrets.AWS_REGION }}
+  STACK_NAME: "my-ec2-stack"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # Required if using OIDC
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Option 1: Using AWS Credentials from Secrets (traditional)
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    # Option 2: Using AWS OIDC (recommended for better security)
+    # - name: Configure AWS Credentials
+    #   uses: aws-actions/configure-aws-credentials@v4
+    #   with:
+    #     role-to-assume: arn:aws:iam::123456789012:role/github-actions-role
+    #     aws-region: ${{ env.AWS_REGION }}
+
+    - name: Deploy CloudFormation Stack
+      run: |
+        aws cloudformation deploy \
+          --template-file cloudformation/ec2-template.yaml \
+          --stack-name ${{ env.STACK_NAME }} \
+          --capabilities CAPABILITY_IAM
+        
+        # Optional: Output the EC2 instance ID
+        INSTANCE_ID=$(aws cloudformation describe-stacks \
+          --stack-name ${{ env.STACK_NAME }} \
+          --query "Stacks[0].Outputs[?OutputKey=='InstanceId'].OutputValue" \
+          --output text)
+        echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+
+    - name: Verify deployment
+      run: |
+        aws cloudformation describe-stacks \
+          --stack-name ${{ env.STACK_NAME }} \
+          --query "Stacks[0].StackStatus" \
+          --output text
